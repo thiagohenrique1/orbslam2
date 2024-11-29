@@ -119,6 +119,11 @@ cv::Mat FrameDrawer::DrawFrame()
         }
     }
 
+    // save im
+    std::string im_path = "/root/whuvid/orbslam/frames/img_" + std::to_string(i) + ".png";
+    cv::imwrite(im_path, im);
+    i++;
+
     cv::Mat imWithInfo;
     DrawTextInfo(im,state, imWithInfo);
 

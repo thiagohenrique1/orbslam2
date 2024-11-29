@@ -31,7 +31,7 @@
 
 using namespace std;
 
-void LoadImages(const string &strSequence, vector<string> &vstrImageFilenames,
+void LoadImages(const string &strSequence, vector<string> &vstrImageFilenames, vector<string> &motionMasks,
                 vector<double> &vTimestamps);
 
 int main(int argc, char **argv)
@@ -45,8 +45,9 @@ int main(int argc, char **argv)
 
     // Retrieve paths to images
     vector<string> vstrImageFilenames;
+    vector<string> motionMasks;
     vector<double> vTimestamps;
-    LoadImages(string(argv[3]), vstrImageFilenames, vTimestamps);
+    LoadImages(string(argv[3]), vstrImageFilenames, motionMasks, vTimestamps);
     std::cout << "Found " << vTimestamps.size() << " timestamps" << std::endl;
     std::cout << "Found " << vstrImageFilenames.size() << " images" << std::endl;
 
@@ -63,6 +64,11 @@ int main(int argc, char **argv)
     cout << "Start processing sequence ..." << endl;
     cout << "Images in the sequence: " << nImages << endl << endl;
 
+
+    bool filter = true;
+    std::string path = string(argv[3]);
+    std::string sequence = path.substr(path.find_last_of("/") + 1);
+
     // Main loop
     cv::Mat im;
     for(int ni=0; ni<nImages; ni++)
@@ -70,6 +76,12 @@ int main(int argc, char **argv)
         // Read image from file
         im = cv::imread(vstrImageFilenames[ni],CV_LOAD_IMAGE_UNCHANGED);
         double tframe = vTimestamps[ni];
+
+        std::string mask_path = motionMasks[ni];
+        cv::Mat mask;
+        if (!mask_path.empty()) {
+            mask = cv::imread(mask_path, CV_LOAD_IMAGE_GRAYSCALE);
+        }
 
         if(im.empty())
         {
@@ -84,7 +96,10 @@ int main(int argc, char **argv)
 #endif
 
         // Pass the image to the SLAM system
-        SLAM.TrackMonocular(im,cv::Mat(),tframe);
+        if (!filter) {
+            mask = cv::Mat();
+        }
+        SLAM.TrackMonocular(im,mask,tframe);
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -122,39 +137,65 @@ int main(int argc, char **argv)
     cout << "mean tracking time: " << totaltime/nImages << endl;
 
     // Save camera trajectory
-    SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");    
+    if (filter) {
+        SLAM.SaveKeyFrameTrajectoryTUM("/root/whuvid/orbslam/filtered_" + sequence + ".txt");
+    } else {
+        SLAM.SaveKeyFrameTrajectoryTUM("/root/whuvid/orbslam/unfiltered_" + sequence + ".txt");
+    }
 
     return 0;
 }
 
-void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilenames, vector<double> &vTimestamps)
-{
-    ifstream fTimes;
-    string strPathTimeFile = strPathToSequence + "/times.txt";
-    fTimes.open(strPathTimeFile.c_str());
-    while(!fTimes.eof())
-    {
-        string s;
-        getline(fTimes,s);
-        if(!s.empty())
-        {
-            stringstream ss;
-            ss << s;
-            double t;
-            ss >> t;
-            vTimestamps.push_back(t);
+void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilenames, vector<string> &motionMasks,
+        vector<double> &vTimestamps) {
+    std::string image_list_path = strPathToSequence + "/other_files/image.txt";
+    std::string mask_location = strPathToSequence + "/pred";
+
+    std::ifstream image_list(image_list_path);
+    std::string line;
+    // skip first 3 lines
+    std::getline(image_list, line);
+    std::getline(image_list, line);
+    std::getline(image_list, line);
+    // int i = 0;
+    while(std::getline(image_list, line)) {
+        // fs::path image_path = strPathToSequence + "/" + line;
+        // long timestamp_long = std::stol(image_path.stem());
+        // // only add if file exists
+        // if (fs::exists(image_path)) {
+        //     vstrImageFilenames.push_back(image_path.string());
+        //     vTimestamps.push_back(timestamp_long / 1e6);
+        // }
+
+        // without using filesystem
+        std::string image_path = strPathToSequence + "/" + line;
+        // check if file exists
+        std::ifstream f(image_path.c_str());
+        if (!f.good()) {
+            std::cerr << "File not found: " << image_path << std::endl;
+            continue;
+        }
+        // std::cout << image_path << std::endl;
+        // from the last / to the first .
+        std::string timestamp_str = image_path.substr(image_path.find_last_of("/") + 1, image_path.find_first_of(".") - image_path.find_last_of("/") - 1);
+        // std::cout << timestamp_str << std::endl;
+        long timestamp_long = std::stol(timestamp_str);
+        vstrImageFilenames.push_back(image_path);
+        vTimestamps.push_back(timestamp_long / 1e9);
+        std::string image_filename = image_path.substr(image_path.find_last_of("/") + 1);
+        std::string mask_path = mask_location + "/" + image_filename;
+        std::ifstream f_mask(mask_path.c_str());
+        if (f_mask.good()) {
+            motionMasks.push_back(mask_path);
+        } else {
+            motionMasks.push_back("");
         }
     }
-
-    string strPrefixLeft = strPathToSequence + "/image_2/";
-
-    const int nTimes = vTimestamps.size();
-    vstrImageFilenames.resize(nTimes);
-
-    for(int i=0; i<nTimes; i++)
-    {
-        stringstream ss;
-        ss << setfill('0') << setw(6) << i;
-        vstrImageFilenames[i] = strPrefixLeft + ss.str() + ".png";
-    }
+    // for (auto& [timestamp, path] : left_images_path) {
+    //     std::string filename = fs::path(path).filename();
+    //     std::string mask_path = strPathToSequence + "/pred/" + filename;
+    //     if (fs::exists(mask_path)) {
+    //         left_masks_path[timestamp] = mask_path;
+    //     }
+    // }
 }

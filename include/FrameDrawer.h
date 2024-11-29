@@ -63,6 +63,8 @@ protected:
     vector<int> mvIniMatches;
     int mState;
 
+    int i = 0;
+
     Map* mpMap;
 
     std::mutex mMutex;

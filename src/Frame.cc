@@ -171,7 +171,7 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 }
 
 
-Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
+Frame::Frame(const cv::Mat &imGray, const double &timeStamp, const cv::Mat &motionMask, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
     :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
      mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
 {
@@ -196,6 +196,28 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
         return;
 
     UndistortKeyPoints();
+
+    // keep only the keypoints that are not in motion (motionMask<200)
+    if (!motionMask.empty()) {
+        vector<cv::KeyPoint> mvKeysTmp;
+        vector<cv::KeyPoint> mvKeysUnTmp;
+        cv::Mat mDescriptorsTmp;
+        for(int i=0; i<N; i++) {
+            cv::Point2f point = mvKeys[i].pt;
+            uchar mask_value = motionMask.at<uchar>(point);
+            if(mask_value < 200) {
+                mvKeysTmp.push_back(mvKeys[i]);
+                mvKeysUnTmp.push_back(mvKeysUn[i]);
+                mDescriptorsTmp.push_back(mDescriptors.row(i));
+            }
+        }
+        // std::cout << "Shapes before: " << mvKeys.size() << " " << mvKeysUn.size() << " " << mDescriptors.size() << " " << N << std::endl;
+        mvKeys = mvKeysTmp;
+        mvKeysUn = mvKeysUnTmp;
+        mDescriptors = mDescriptorsTmp;
+        N = mvKeys.size();
+        // std::cout << "Shapes after: " << mvKeys.size() << " " << mvKeysUn.size() << " " << mDescriptors.size() << " " << N << std::endl;
+    }
 
     // Set no stereo information
     mvuRight = vector<float>(N,-1);
